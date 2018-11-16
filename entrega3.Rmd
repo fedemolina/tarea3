@@ -1,15 +1,44 @@
+---
+title: 'Tarea 1: RMarkdown'
+author: "Federico Molina Magne"
+date: "Lunes 1 de Octubre"
+output:
+  pdf_document: 
+    number_sections: yes
+    toc: yes
+geometry: margin=3cm
+lang: es
+fontsize: 12pt
+---
+ 
+\newpage
+```{r setup, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE,
+	results = 'hide'
+)
 library(dplyr)
 library(tidyr)
-library(readr)
+library(ggplot2)
+library(skimr)
 library(tidyverse)
 library(reshape2)
+library(forcats)
+library(readr)
 library(Rcpp)
+```
+
+```{r}
 data <- read.delim("datos_rna.txt", stringsAsFactors = FALSE)
 str(data)
 #data2 <-readr::read_delim("datos_rna.txt", delim = "\t")
+```
 
-######## EDA
+# Ejercicio 1
 
+```{r}
 data.tidy <- data %>% 
   gather(., "cod", "valor", 2:ncol(.)) %>%
   separate(data=. , col = cod, into = c("rep","geno","alelo")) %>%
@@ -19,15 +48,19 @@ data.tidy$geno[data.tidy$geno==c("B","BM","M","MB")] <- c("B73","B73xMo17","Mo17
 data.tidy[,4:6] <- lapply(data.tidy[,4:6], as.numeric) #podría usar purrr
 data.tidy[2:3] <- lapply(data.tidy[,2:3], as.factor) 
 str(data.tidy) #Perfeito
-
 #Obs: Los pen-últimos dos pasos se pueden combinar en uno solo.
+```
 
+Los datos del gráfico tienen el mismo formato a la tabla que se presenta en la propuesta de la tarea 3, sin embargo, existe una variación, ya que, los genotipos llamados B73xMo17 y Mo17xB73 no son diferenciados, ambos son etiquetados como B73xMo17. La otra opción era filtrar Mo17xB73 del gráfico pero no parece ser la opción de la imagen, dada la cantidad de puntos. En cualquier caso el resultado del gráfico no cambia, se observa que los genotipos B73 muestran incorrelación lineal para las expresiones génicas de alelos B y M (ambas en logs). Lo mismo sucede para los genotipos Mo17. Por otro lado, para los genotipos B73xMo17 se observa una marcada correlación lineal  para las expresiones génicas de alelos B y M (en logs).
+
+```{r}
 data.plot <- data.tidy
 data.plot[,3] <- as.character(data.plot[,3])
 data.plot$geno[data.plot$geno=="Mo17xB73"] <- "B73xMo17"
-#data.plot <- data.plot %>% filter(!geno=="Mo17xB73")
 data.plot[,3] <- as.factor(data.plot[,3])
+```
 
+```{r}
 data.plot %>% ggplot(., aes(x=log(m+1),y=log(b+1), color = geno)) +
   geom_point(alpha=1/6) +
   facet_wrap(~rep) +
@@ -37,14 +70,11 @@ data.plot %>% ggplot(., aes(x=log(m+1),y=log(b+1), color = geno)) +
   labs(x = "Expresión génica de alelo M (en logs)", y = "Expresión génica de alelo B (en logs)") +
   theme_bw() +
   scale_color_manual(values = c("green4","orangered2","purple4"))
+```
 
-# Comentarios figura
-  # Comentar las correlaciones
-
-### Ejercicio 2
-  # No queda claro si habría que filtrar por "B73xMo17"
-  # Lo hago de las dos formas.
-
+# Ejercicio 2
+  
+```{r}
 compara <- function(x, y) {
   m <- length(x)
   n <- length(y)
@@ -56,30 +86,41 @@ compara <- function(x, y) {
   #el valor t es 8.743106
 }
 Rcpp::sourceCpp("test_medias.cpp")
+```
 
-# a)
+### a)
+```{r}
 BM <- data.tidy %>% filter(geno=="B73xMo17",GeneID == "AC155377.1_FG001") %>% select(b,m,GeneID)
 compara(BM$b,BM$m) 
 t.test(BM$b,BM$m)$p.value 
 test_medias(BM$b,BM$m) 
+```
 
+```{r}
 BM0 <- data.tidy %>% filter(GeneID == "AC155377.1_FG001")
 compara(BM$b,BM$m) 
 t.test(BM$b,BM$m)$p.value 
 test_medias(BM$b,BM$m) 
+```
 
 # b
+```{r}
 a <- microbenchmark::microbenchmark(
   compara = compara(BM$b,BM$m),
   'R base' = t.test(BM$b,BM$m)$p.value,
   Rcpp = test_medias(BM$b,BM$m),
   times=10000L
 )
+```
+ 
+```{r}
 a %>% ggplot(., aes(y=time, x = expr, col = expr)) +
   geom_boxplot() +
   scale_y_log10() +
   labs(x = "", y = "Tiempo (en logs)", col = "Funciones test de medias") +
   theme(legend.position = "bottom")
+```
+ 
   
 # c
   # Explicar las diferencias en cada corrida debido a procesamieno interno de la pc
