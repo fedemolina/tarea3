@@ -1,7 +1,7 @@
 ---
-title: 'Tarea 1: RMarkdown'
+title: 'Tarea 3: RMarkdown'
 author: "Federico Molina Magne"
-date: "Lunes 1 de Octubre"
+date: "Viernes 16 de Noviembre"
 output:
   pdf_document: 
     number_sections: yes
@@ -30,13 +30,12 @@ library(forcats)
 library(readr)
 library(Rcpp)
 ```
-
+https://github.com/fedemolina/tarea3 [Ver mi repositorio](https://github.com/fedemolina)
 
 # Ejercicio de order y gráfico de datos
 
 ```{r}
 data <- read.delim("datos_rna.txt", stringsAsFactors = FALSE)
-str(data)
 #data2 <-readr::read_delim("datos_rna.txt", delim = "\t")
 ```
 
@@ -49,8 +48,7 @@ data.tidy <- data %>%
   spread(data=., alelo, valor)
 data.tidy$geno[data.tidy$geno==c("B","BM","M","MB")] <- c("B73","B73xMo17","Mo17","Mo17xB73")
 data.tidy[,4:6] <- lapply(data.tidy[,4:6], as.numeric) #podría usar purrr
-data.tidy[2:3] <- lapply(data.tidy[,2:3], as.factor) 
-str(data.tidy) #Perfeito
+data.tidy[2:3] <- lapply(data.tidy[,2:3], as.factor) #Perfeito
 #Obs: Los pen-últimos dos pasos se pueden combinar en uno solo.
 ```
 
@@ -174,7 +172,7 @@ print(xtable::xtable(summary(a)))
 ```
 
 ## Gráfica de ejecución
-  # Explicar las diferencias en cada corrida debido a procesamieno interno de la pc
+Explicar las diferencias en cada corrida debido a procesamieno interno de la pc
 Lo primero que se observa es que hay variación en las distintas corridas de las funciones, esto se debe al funcionamiento interno de la computadora que lleva a cabo diferentes procesos a la vez. Es por eso que se replico la prueba con microbenchmark 10.000 veces. En base a ello, se observa variación entre los mínimos, medianos y máximos, en especial para el caso de la función en Rcpp. Ahora bien, las variaciones entre el mínimo y el tercer cuartil son poco evidentes, al observar la distribución en el gráfico de cajas (si bien los valores atípicos no dejan observar el resto de la distribución, ya que, queda comprimida) las mismas están bastantes (en logs) comprimidas. Son llamativo dichos valores máximos, que se alejan de gran manera siendo claramente outliers. Ello refuerza la importancia de correr gran cantidad de veces la prueba.
 
 ## Problemas t.test
@@ -183,18 +181,14 @@ Problemas: Si se filtra solamente por el GenID tenemos como máximos 16 observac
 # Comparación expresión alélica
 
 ## Probabilidad de rechazo
-¿Cuál es la probabilidad de concluir que hay al menos un gen en que las medias son distintas (es decir, rechazar H0 con alpha = .05) ?
+¿Cuál es la probabilidad de concluir que hay al menos un gen en que las medias son distintas (es decir, rechazar H0 con alpha = .05) ? El valor p es prácticamente cero en todos los casos (las 3 funciones). Por lo tanto, se rechaza la hipótesis nula de que para todos los genes, las medias de m y b son exactamente
+iguales.
 ```{r}
 BM3 <- data.tidy %>% filter(geno=="B73xMo17") 
 compara(BM3$b,BM3$m)
-t.test(BM3$b,BM3$m)
+t.test(BM3$b,BM3$m)$p.value
 test_medias(BM3$b,BM3$m)
 ```
-
-No esta el cero en el intervalo. P value es cero.
-Por defecto alpha es 0.05
-No se rechaza H0 con alpha = 0.05. La probabilidad es prácticamente uno?
-Prob(x>1)
 
 ```{r}
 compara(BM3$b,BM3$m)
@@ -204,26 +198,22 @@ test_medias(BM3$b,BM3$m)
 
 ## Cantidad de genes esperados erroneos 
 
-Asumiendo que: para todos los genes, las medias de m y b son exactamente
-iguales (H0g cierta), y que la expresión de cada gen es
- independiente del resto. ¿En cuantos genes se espera concluir, erróneamente,
- que la diferencia es significativa con alpha = .05?
+Dado que tenemos 2500 genes, y estamos trabajando con un valor de significativdad de $\alpha_{0.05}$ se espera que en 125 genes las conclusiones sean erroneas si se repitiera el experimento. Asumiendo que para todos los genes, las medias de m y b son exactamente iguales (H0 cierta), y que la expresión
+de cada gen es independiente del resto.
 
-## Proporción de genes p-valor < 0.5 
-Para cada gen, calcula un valor-p para la prueba que compara las medias
- de cada alelo, utiliza la expresión transformada en logaritmos (puedes
- sumar el valor 1 para asegurarte que siempre existe la transformación).
+## Proporción de genes p-valor < 0.05 
+Para cada gen, se calcula un valor-p para la prueba que compara las medias de cada alelo. Se utiliza la expresión transformada en logaritmos (se suma 1).
 ```{r}
 BM3 <- BM3 %>% mutate(logm = log(1+.$m),
                       logb = log(1+.$b))
 ```
 
-Con broom 
+El calculo se puede hacer de dos formas, con el paquete broom o con R base. A continuación broom:
 ```{r}
 BM3 %>% group_by(GeneID) %>% dplyr::do(broom::tidy(t.test(log(.$b+1),log(.$m+1), data=.)))
 ```
 
-Con R base
+A continuación el código con R base
 ```{r}
 lista <- split(BM3, BM3$GeneID,drop=FALSE) 
 output <- vector("list", length = length(lista))
@@ -232,24 +222,30 @@ output <- lapply(1:length(lista),function (x) output[[x]] <- t.test(lista[[x]]$l
 pvalor <- vector(length = length(lista))
 pvalor <- lapply(1:length(lista), function (x) pvalor[[x]] <- output[[x]]$p.value) %>% unlist() 
 ```
+Los NaN se explican porque en la agrupación hay genes de alelos a y b que son iguales, por lo tanto no hay variancia en ningún grupo ni standar error. Ó sea queda indefinido.
 
-Los NaN se explican porque en la agrupación hay genes de alelos a y b que son iguales, por lo tanto no hay variancia en ningún grupo ni standar error.
-o sea queda indefinido.
+```{r echo=FALSE, message=FALSE, warning=FALSE, results="asis"}
+pval <- as.data.frame(pvalor)
+ggplot(pval, aes(y=pvalor, x=1:2500)) +
+  geom_point(alpha = 1/3)+
+  labs(x = "observaciones", y = "p-valor") +
+  theme(aspect.ratio = 1) +
+  ggtitle("Gráfico de los p-valor en cada test")
+tabla0 <- xtable::xtable(apply(pval,2,summary), caption = "Tabla de resúmen",  label="tab:tab1", floating=TRUE)
+print(tabla0,caption.placement = 'top')
+```
+La proporción de genes que tiene un valor-p menor al 5% es de `r round(mean(pvalor<0.05, na.rm = TRUE),3)`. Sin tomar en cuenta los más de 1000 NaN.
 
-## P-valor ajustado
-```{r}
-mean(pvalor<0.05, na.rm = TRUE)
-summary(pvalor)
-
+## Proporción genes p-valor ajustado <0.05
+```{r echo=FALSE, message=FALSE, warning=FALSE, results="asis"}
+pval.ad <- as.data.frame(p.adjust(pvalor))
+ggplot(pval.ad, aes(y=`p.adjust(pvalor)`, x=1:2500)) +
+  geom_point(alpha=1/3, position = position_jitter(width = 0.02, height = 0.02))+
+  labs(x = "observaciones", y = "p-valor ajustado")+
+  theme(aspect.ratio = 1) +
+  ggtitle("Gráfico de los p-valor en cada test")
+tabla <- xtable::xtable(apply(pval.ad,2,summary), caption = "Tabla de resúmen",  label="tab:tab1", floating=TRUE)
+print(tabla,caption.placement = 'top')
 ```
 
- ¿Qué proporción de genes tiene valor-p menor al 5% ?
-   d. Utilizando la función p.adjust() se pueden corregir los valores-p
- debido a que estamos realizando 2500 pruebas a la vez. ¿Qué proporción
- de genes tiene valor-p (ajustado) menos a 5% ?
-```{r}
-mean(p.adjust(pvalor)<0.05,na.rm = TRUE)
-summary(p.adjust(pvalor))
-
-```
- Aproximadamente un 0.3%. Sin contar mas de 1000 NaN
+La proporcion de genes que tiene un p-valor ajustado menor a 0.05 es `r round(mean(p.adjust(pvalor)<0.05,na.rm = TRUE),3)`. Sin contar mas de 1000 NaN.

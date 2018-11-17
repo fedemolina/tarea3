@@ -94,7 +94,7 @@ a %>% ggplot(., aes(y=log(time+1), x = expr, col = expr)) +
 # ¿Cuál es la probabilidad de concluir que hay
 # al menos un gen en que las medias son distintas (es decir, rechazar H0
 #                                                  con alpha = .05) ?
-BM3 <- data.tidy %>% filter(geno=="B73xMo17") 
+BM3 <- data.tidy %>% filter(geno=="B73xMo17") #10.000 filas = 2500 genes.
 compara(BM3$b,BM3$m)
 t.test(BM3$b,BM3$m)
 test_medias(BM3$b,BM3$m)
