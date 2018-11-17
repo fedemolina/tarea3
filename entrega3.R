@@ -75,9 +75,9 @@ a <- microbenchmark::microbenchmark(
   Rcpp = test_medias(BM$b,BM$m),
   times=10000L
 )
-a %>% ggplot(., aes(y=time, x = expr, col = expr)) +
+a %>% ggplot(., aes(y=log(time+1), x = expr, col = expr)) +
   geom_boxplot() +
-  scale_y_log10() +
+  #scale_y_log10() +
   labs(x = "", y = "Tiempo (en logs)", col = "Funciones test de medias") +
   theme(legend.position = "bottom")
   

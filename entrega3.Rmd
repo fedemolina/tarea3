@@ -6,9 +6,9 @@ output:
   pdf_document: 
     number_sections: yes
     toc: yes
-geometry: margin=3cm
+geometry: margin=2cm
 lang: es
-fontsize: 12pt
+fontsize: 10pt
 ---
  
 \newpage
@@ -17,7 +17,8 @@ knitr::opts_chunk$set(
 	echo = TRUE,
 	message = FALSE,
 	warning = FALSE,
-	results = 'hide'
+	results = 'hide',
+	options(xtable.comment = FALSE)
 )
 library(dplyr)
 library(tidyr)
@@ -30,14 +31,16 @@ library(readr)
 library(Rcpp)
 ```
 
+
+# Ejercicio de order y gráfico de datos
+
 ```{r}
 data <- read.delim("datos_rna.txt", stringsAsFactors = FALSE)
 str(data)
 #data2 <-readr::read_delim("datos_rna.txt", delim = "\t")
 ```
 
-# Ejercicio 1
-
+## Ordenamiento de datos
 ```{r}
 data.tidy <- data %>% 
   gather(., "cod", "valor", 2:ncol(.)) %>%
@@ -53,6 +56,7 @@ str(data.tidy) #Perfeito
 
 Los datos del gráfico tienen el mismo formato a la tabla que se presenta en la propuesta de la tarea 3, sin embargo, existe una variación, ya que, los genotipos llamados B73xMo17 y Mo17xB73 no son diferenciados, ambos son etiquetados como B73xMo17. La otra opción era filtrar Mo17xB73 del gráfico pero no parece ser la opción de la imagen, dada la cantidad de puntos. En cualquier caso el resultado del gráfico no cambia, se observa que los genotipos B73 muestran incorrelación lineal para las expresiones génicas de alelos B y M (ambas en logs). Lo mismo sucede para los genotipos Mo17. Por otro lado, para los genotipos B73xMo17 se observa una marcada correlación lineal  para las expresiones génicas de alelos B y M (en logs).
 
+## Gráfico de dispersión 
 ```{r}
 data.plot <- data.tidy
 data.plot[,3] <- as.character(data.plot[,3])
@@ -72,7 +76,7 @@ data.plot %>% ggplot(., aes(x=log(m+1),y=log(b+1), color = geno)) +
   scale_color_manual(values = c("green4","orangered2","purple4"))
 ```
 
-# Ejercicio 2
+# Ejercicio Rcpp y Benchmark
   
 ```{r}
 compara <- function(x, y) {
@@ -85,26 +89,70 @@ compara <- function(x, y) {
   2*(1 - pt( abs(tstat), df = n+m-2) )
   #el valor t es 8.743106
 }
-Rcpp::sourceCpp("test_medias.cpp")
 ```
 
-### a)
-```{r}
-BM <- data.tidy %>% filter(geno=="B73xMo17",GeneID == "AC155377.1_FG001") %>% select(b,m,GeneID)
-compara(BM$b,BM$m) 
-t.test(BM$b,BM$m)$p.value 
-test_medias(BM$b,BM$m) 
+```{r engine='Rcpp', testmedias, cache = TRUE}
+#include <Rcpp.h>
+#include <cmath>
+#include <numeric>
+#include <Rmath.h>
+
+// [[Rcpp::export]]
+double test_medias(Rcpp::NumericVector x, Rcpp::NumericVector y) {
+  double sumX=0.0, sumY=0.0, mediaX=0.0, mediaY=0.0, 
+         varX=0.0, varY=0.0, sp=0.0, tstat=0.0,
+         n = y.size(),m = x.size();
+  int i=0;
+  for(i = 0; i < m; ++i) {
+    sumX = x[i] + sumX;
+  }
+  mediaX = sumX/m;
+  for(i = 0; i < m; ++i){
+    varX = (x[i] - mediaX)*(x[i]-mediaX) + varX;
+  }
+  varX = varX/(m-1);
+  for(i = 0; i < m; ++i) {
+    sumY = y[i] + sumY;
+  }
+  mediaY = sumY/n;
+  for(i = 0; i < n; ++i){
+    varY = (y[i] - mediaY)*(y[i] - mediaY) + varY;
+  }
+  varY=varY/(n-1);
+  sp = sqrt((((m-1)*varX) + ((n-1)*varY)) / (m+n-2));
+  tstat = (mediaX - mediaY) / (sp*sqrt(1/n + 1/m)); 
+  return 2*(1-R::pt(std::abs(tstat), (n+m-2), 1, 0));        
+  // retorna el p-valor
+}
 ```
+
+## Test de medias en Rcpp
+
+Queda la duda, dado el párrafo inicial del enunciado si se desea filtrar previamente por genotipo y luego por GeneID o solamente por este último. Se realizan los test en los dos casos y los resultados varían levemente. 
+```{rcpp ref.label='test_medias'}
+test_medias(BM$b,BM$m)
+```
+
+```{r}
+BM <- data.tidy %>% filter(geno=="B73xMo17",GeneID == "AC155377.1_FG001") %>%
+  select(b,m,GeneID)
+sapply(c(compara(BM$b,BM$m),
+t.test(BM$b,BM$m)$p.value,
+test_medias(BM$b,BM$m)),FUN = round, 3)
+```
+
+En el primer caso con la función compara el resultado es de `r round(compara(BM$b,BM$m),3)` para la función compara, de `r round(t.test(BM$b,BM$m)$p.value,3)` para la función t.test de R base y finalmente la función *test_medias* generada en c++ da un p-valor de 0.433
 
 ```{r}
 BM0 <- data.tidy %>% filter(GeneID == "AC155377.1_FG001")
-compara(BM$b,BM$m) 
-t.test(BM$b,BM$m)$p.value 
-test_medias(BM$b,BM$m) 
+sapply(c(compara(BM0$b,BM0$m), 
+t.test(BM0$b,BM0$m)$p.value,
+test_medias(BM0$b,BM0$m)),FUN = round, 3) 
 ```
+En el segundo caso la función *compara* da un p-valor de `r round(compara(BM0$b,BM0$m),3)`, la función *t.test* de `r round(t.test(BM0$b,BM0$m)$p.value,3)` y finalmente *test_medias* un valor de 0.478.
 
-# b
-```{r}
+## Microbenchmark
+```{r }
 a <- microbenchmark::microbenchmark(
   compara = compara(BM$b,BM$m),
   'R base' = t.test(BM$b,BM$m)$p.value,
@@ -113,70 +161,95 @@ a <- microbenchmark::microbenchmark(
 )
 ```
  
+ 
 ```{r}
-a %>% ggplot(., aes(y=time, x = expr, col = expr)) +
+a %>% ggplot(., aes(y=log(time+1), x = expr, col = expr)) +
   geom_boxplot() +
-  scale_y_log10() +
   labs(x = "", y = "Tiempo (en logs)", col = "Funciones test de medias") +
   theme(legend.position = "bottom")
 ```
- 
-  
-# c
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, results="asis"}
+print(xtable::xtable(summary(a)))
+```
+
+## Gráfica de ejecución
   # Explicar las diferencias en cada corrida debido a procesamieno interno de la pc
+Lo primero que se observa es que hay variación en las distintas corridas de las funciones, esto se debe al funcionamiento interno de la computadora que lleva a cabo diferentes procesos a la vez. Es por eso que se replico la prueba con microbenchmark 10.000 veces. En base a ello, se observa variación entre los mínimos, medianos y máximos, en especial para el caso de la función en Rcpp. Ahora bien, las variaciones entre el mínimo y el tercer cuartil son poco evidentes, al observar la distribución en el gráfico de cajas (si bien los valores atípicos no dejan observar el resto de la distribución, ya que, queda comprimida) las mismas están bastantes (en logs) comprimidas. Son llamativo dichos valores máximos, que se alejan de gran manera siendo claramente outliers. Ello refuerza la importancia de correr gran cantidad de veces la prueba.
 
-# d
-# d. Pensando en la comparación entre alelos para un sólo gen (ejemplo
-# el ‘AC155377.1_FG001’), cuál es el problema más grave de hacer la
-# prueba t.test()?
-    # El problema es que son solo 4 casos. Por lo tanto, la prueba pierde potencia? significatividad?
+## Problemas t.test
+Problemas: Si se filtra solamente por el GenID tenemos como máximos 16 observaciones. Si además se filtra por B73xMo17 solamente quedan 4 observaciones. Es decir, los grados de libertad son realmente pocos, generando problemas en la prueba, ya que, al haber menos observaciones los n y m son pequeños pero la varianza va a ser mayor. Mas problemático es que el test se basa en la independencia de los dos grupos muestreados y su identica distribución (normal) y homogeneidad en sus varianzas. Especialmente crucial es el supuesto de normalidad de las dos muestras, siendo este el mayor problema que se presenta en este caso.
 
-### Ejercicio 3
-# ¿Cuál es la probabilidad de concluir que hay
-# al menos un gen en que las medias son distintas (es decir, rechazar H0
-#                                                  con alpha = .05) ?
+# Comparación expresión alélica
+
+## Probabilidad de rechazo
+¿Cuál es la probabilidad de concluir que hay al menos un gen en que las medias son distintas (es decir, rechazar H0 con alpha = .05) ?
+```{r}
 BM3 <- data.tidy %>% filter(geno=="B73xMo17") 
 compara(BM3$b,BM3$m)
 t.test(BM3$b,BM3$m)
 test_medias(BM3$b,BM3$m)
-# No esta el cero en el intervalo. P value es cero.
-# Por defecto alpha es 0.05
-  # No se rechaza H0 con alpha = 0.05. La probabilidad es prácticamente uno?
-  # Prob(x>1)
-BM3 <- data.tidy %>% filter(geno=="B73xMo17") # %>% group_by(GeneID) %>% summarise(test = t.test)
+```
 
+No esta el cero en el intervalo. P value es cero.
+Por defecto alpha es 0.05
+No se rechaza H0 con alpha = 0.05. La probabilidad es prácticamente uno?
+Prob(x>1)
+
+```{r}
 compara(BM3$b,BM3$m)
 t.test(BM3$b,BM3$m)
 test_medias(BM3$b,BM3$m)
+```
 
+## Cantidad de genes esperados erroneos 
 
-# b. Asumiendo que: para todos los genes, las medias de m y b son exactamente
-# iguales (H0g cierta), y que la expresión de cada gen es
-# independiente del resto. ¿En cuantos genes se espera concluir, erróneamente,
-# que la diferencia es significativa con alpha = .05?
+Asumiendo que: para todos los genes, las medias de m y b son exactamente
+iguales (H0g cierta), y que la expresión de cada gen es
+ independiente del resto. ¿En cuantos genes se espera concluir, erróneamente,
+ que la diferencia es significativa con alpha = .05?
 
-#   c. Para cada gen, calcula un valor-p para la prueba que compara las medias
-# de cada alelo, utiliza la expresión transformada en logaritmos (puedes
-# sumar el valor 1 para asegurarte que siempre existe la transformación).
+## Proporción de genes p-valor < 0.5 
+Para cada gen, calcula un valor-p para la prueba que compara las medias
+ de cada alelo, utiliza la expresión transformada en logaritmos (puedes
+ sumar el valor 1 para asegurarte que siempre existe la transformación).
+```{r}
 BM3 <- BM3 %>% mutate(logm = log(1+.$m),
                       logb = log(1+.$b))
-# Con broom 
+```
+
+Con broom 
+```{r}
 BM3 %>% group_by(GeneID) %>% dplyr::do(broom::tidy(t.test(log(.$b+1),log(.$m+1), data=.)))
-# R base
+```
+
+Con R base
+```{r}
 lista <- split(BM3, BM3$GeneID,drop=FALSE) 
 output <- vector("list", length = length(lista))
-output <- lapply(1:length(lista),function (x) output[[x]] <- t.test(lista[[x]]$logb,lista[[x]]$logm)) # NO rechazo H0, el cero incluido en el intervalo.
+output <- lapply(1:length(lista),function (x) output[[x]] <- t.test(lista[[x]]$logb,lista[[x]]$logm)) 
+# NO rechazo H0, el cero incluido en el intervalo.
 pvalor <- vector(length = length(lista))
 pvalor <- lapply(1:length(lista), function (x) pvalor[[x]] <- output[[x]]$p.value) %>% unlist() 
-  # Los NaN se explican porque en la agrupación hay genes de alelos a y b que son iguales, por lo tanto no hay variancia en ningún grupo ni standar error.
-  # o sea queda indefinido.
+```
+
+Los NaN se explican porque en la agrupación hay genes de alelos a y b que son iguales, por lo tanto no hay variancia en ningún grupo ni standar error.
+o sea queda indefinido.
+
+## P-valor ajustado
+```{r}
 mean(pvalor<0.05, na.rm = TRUE)
 summary(pvalor)
 
-# ¿Qué proporción de genes tiene valor-p menor al 5% ?
-#   d. Utilizando la función p.adjust() se pueden corregir los valores-p
-# debido a que estamos realizando 2500 pruebas a la vez. ¿Qué proporción
-# de genes tiene valor-p (ajustado) menos a 5% ?
+```
+
+ ¿Qué proporción de genes tiene valor-p menor al 5% ?
+   d. Utilizando la función p.adjust() se pueden corregir los valores-p
+ debido a que estamos realizando 2500 pruebas a la vez. ¿Qué proporción
+ de genes tiene valor-p (ajustado) menos a 5% ?
+```{r}
 mean(p.adjust(pvalor)<0.05,na.rm = TRUE)
 summary(p.adjust(pvalor))
-  # Aproximadamente un 0.3%. Sin contar mas de 1000 NaN
+
+```
+ Aproximadamente un 0.3%. Sin contar mas de 1000 NaN
